@@ -10,21 +10,20 @@ my_lib <- '~/R/my_library/'
 #install.packages("glmnet", repos = "http://cran.us.r-project.org",lib = my_lib)
 # install.packages("doBy", lib = my_lib)
 # install.packages('corrplot',lib = my_lib)
-# install.packages('MuMIn', lib = my_lib)
 # install.packages('AICcmodavg',lib = my_lib)
 
 pacman::p_load(data.table, dplyr,tidyr,stringr)
 
 
-library(glmnet,lib.loc = my_lib)
-library(doBy,  lib.loc = my_lib)
-library(gtools)
-library(corrplot,lib.loc =my_lib) # correlation plot
-library(lme4)
-# library(MuMIn, lib.loc = my_lib) # Multi-Model Inference - MODEL SELECTION
+library(glmnet, lib.loc = my_lib)
+library(doBy, lib.loc = my_lib)
+library(gtools, lib.loc = my_lib)
+library(corrplot, lib.loc =my_lib) # correlation plot
+library(lme4, lib.loc = my_lib)
 library(AICcmodavg, lib.loc = my_lib) # compute AIC for mixed effect models
 source("http://www.sthda.com/upload/rquery_cormat.r")
 require(ggplot2)
+library(parallel)
 
 #===================================================
 # data description:
@@ -59,10 +58,11 @@ lambda_min = cvfit$lambda.min
 
 # run glmnet and zero out coefficients
 fit <- glmnet(x,y, family = "gaussian",lambda = lambda_min)
-coef(fit)
+fit_matrix = as.matrix(coef(fit))
+fit_matrix = data.table(var = rownames(fit_matrix), coef = fit_matrix[,1])
 
 # variables with zero coefficients need to be dropped
-drop <- c('logit_pfpr','logit_itn_pfpr_interaction','logit_anc1','logit_sba','logit_sdi')
+drop <- fit_matrix[coef == 0, var][-1]
 
 #*****************************************************************************************************************
 #                                         MODEL SELECTION - with Cross validation
@@ -77,7 +77,7 @@ dataset <- data_ssa
 #========================================
 ## STEP1: Create list of models
 #=======================================
-list.of.models <- lapply(seq_along((predictors)), function(n) {
+list.of.models <- mclapply(seq_along((predictors)), function(n) {
   
   LHS <- y
   RHS <- apply(X = combn(predictors, n), MARGIN = 2, paste, collapse = " + ")
@@ -92,7 +92,7 @@ vector.of.models <- unlist(list.of.models)
 # STEP 2: SELECT A SUBSET BASED ON INTERSECTION OF 1000 BEST AIC AND BIC MODELS
 #=========================================================================
 
-model.list <- lapply(vector.of.models, function(x) lmer(x, data = dataset))
+model.list <- mclapply(vector.of.models, function(x) lmer(x, data = dataset))
 bic_result <- bictab(cand.set = model.list)
 aic_result <- aictab(cand.set = model.list)
 
@@ -106,7 +106,7 @@ mod_index <- as.integer(gsub(x = aic_bic_dt$Modnames,pattern = 'Mod',replacement
 
 subset.models <- vector.of.models[mod_index]
 
-list.of.fits <- lapply(subset.models, function(x) {
+list.of.fits <- mclapply(subset.models, function(x) {
   
   
   formula    <- as.formula(x)
